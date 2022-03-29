@@ -1,5 +1,9 @@
-# NBDBPool
-Database Pool application
+nbdbpool
+=====
 
+An OTP application
 
-first commit
+Build
+-----
+
+    $ rebar3 compile
