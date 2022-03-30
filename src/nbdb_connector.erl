@@ -7,49 +7,76 @@
 
 -export([request/1, request/2]).
 
--record(state,{pool,open,close}).
+-define(DEFAULTPOOL, {default_pool,undef,undef}).
 
--define(DEFAULTPOOL, default_pool).
+-record(state,{pool,open_fun}).
 
+
+
+
+
+%% This is a separate gen_server because the "open" function to open a new DB connecition is blocking.
+%% If this is done in the main pool gen_server and when very busy, opening a new connection blocks the 
+%% retrieval/returning of already active db connections in the pool.
+%%
+%%
+%%
+
+
+
+
+
+%% API =========================================================================================
 request(Number) when is_number(Number) ->
     request(?DEFAULTPOOL,Number);
 
-request(Pool) ->
-    request(Pool,1).
+request(PoolConnector) ->
+    request(PoolConnector,1).
 
-request(Pool,Number) ->
-    io:format("request for ~p extra connections to pool ~p~n",[Number,Pool]),
-    gen_server:cast({nbdb_connector,Pool}, {request, Number, self()}).
+request(PoolConnector,Number) ->
+    io:format("request for ~p extra connections to pool connector ~p~n",[Number,PoolConnector]),
+    gen_server:cast(PoolConnector, {request, Number, self()}).
 
 
-
+%% OTP =========================================================================================
 
 
 
 start_link() ->
     start_link(?DEFAULTPOOL).
 
-start_link(Pool) ->
-    gen_server:start_link({local, {nbdb_connector,Pool}}, nbdb_connector, [Pool], []).
+start_link(PoolConnectorArg) ->
+    {Pool,_,_} = PoolConnectorArg,
+    io:format("~p, start_link for ~p~n",[?MODULE, Pool]),
+    Name = list_to_atom(atom_to_list(Pool) ++ "_connector"),
+    gen_server:start_link({local, Name}, nbdb_connector, [PoolConnectorArg], []).
 
-
-init([Pool]) ->
+init([{Pool,Open}]) ->
     io:format("starting nbdb_connector for pool ~p~n",[Pool]),
-    %% read open and close function from config
-    State = #state{pool=Pool},
+    State = #state{pool=Pool, open_fun=Open},
     {ok, State}.
 
-
+%%----------------------
 handle_cast({request, Number, From}, State) ->
     io:format("~p: got request from ~p to open ~p new database connections~n",[State#state.pool, From, Number]),
+    deliver_connection(From, open_connection(State#state.open_fun)),
     {noreply, State};
 
 handle_cast(UnknownRequest, State) ->
     io:format("~p: unknown request: ~p~n",[State#state.pool, UnknownRequest]),
     {noreply, State}.
 
-
+%%----------------------
 handle_call(Request, From, State) ->
     io:format("~p: got call for unknown request ~p from ~p~n",[State#state.pool, Request, From]),
     {reply, error, State}.
 
+%% INTERNAL ======================================================================================
+
+
+open_connection(OpenFun) ->
+    OpenFun().
+    
+
+deliver_connection(PoolRef,Connection) ->
+    nbdb_pool:add(PoolRef,Connection).

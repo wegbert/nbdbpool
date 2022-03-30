@@ -13,6 +13,20 @@
 
 -define(SERVER, ?MODULE).
 
+
+
+%% API ========================================
+
+
+
+
+
+
+
+
+
+
+%% OTP ===================================================
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
@@ -37,7 +51,7 @@ init([]) ->
                  period => 1},
     ChildSpecs = [#{
                      id => nbdb_pool,
-                     start => [nbdb_poool,start_link,[]],
+                     start => {nbdb_poool,start_link,[]},
                      restart => transient,
                      shutdown => brutal_kill,
                      type => worker,
@@ -45,4 +59,6 @@ init([]) ->
                  }],
     {ok, {SupFlags, ChildSpecs}}.
 
-%% internal functions
+
+
+%% INTERNAL ====================================================

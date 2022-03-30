@@ -32,7 +32,7 @@ init([]) ->
                  period => 1},
     ChildSpecs = [#{
                      id => nbdb_connector_sup,
-                     start => [nbdb_connector_sup,start_link,[]],
+                     start => {nbdb_connector_sup,start_link,[]},
                      restart => permanent,
                      shutdown => 5000,
                      type => supervisor,
@@ -40,7 +40,7 @@ init([]) ->
                  },
                  #{
                      id => nbdb_pool_sup,
-                     start => [nbdb_pool_sup,start_link,[]],
+                     start => {nbdb_pool_sup,start_link,[]},
                      restart => permanent,
                      shutdown => 5000,
                      type => supervisor,

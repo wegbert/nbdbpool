@@ -7,7 +7,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0]).
+-export([start_link/0, start_child/1]).
 
 -export([init/1]).
 
@@ -18,6 +18,8 @@ start_link() ->
     %% after starting the supervisor, add the configured pools
     %% (or default pool)
 
+start_child(PoolConnectorArgs) ->
+   supervisor:start_child(?SERVER, [PoolConnectorArgs]).
 
 %% sup_flags() = #{strategy => strategy(),         % optional
 %%                 intensity => non_neg_integer(), % optional
@@ -40,7 +42,7 @@ init([]) ->
                  period => 1},
     ChildSpecs = [#{
                      id => nbdb_connector,
-                     start => [nbdb_connector,start_link,[]],
+                     start => {nbdb_connector,start_link,[]},
                      restart => transient,
                      shutdown => brutal_kill,
                      type => worker,
