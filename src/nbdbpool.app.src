@@ -11,9 +11,8 @@
     { default, #{ 
         min_idle => 10, 
         max_idle => 50, 
-        max => 200, 
-        min => 50
-         
+        max => 200,
+        connect_provider => {erlang, self, []}
       }
     },
     { ocsdb, #{
@@ -27,6 +26,8 @@
                             },
         close_provider => {epgsql, close, []}
       }
+    },
+    { ocsdb02, #{}
     }
   ]}]},
   {modules, []},

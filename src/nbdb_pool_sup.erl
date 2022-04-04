@@ -7,7 +7,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, start_child/1]).
+-export([start_link/0, start_child/2]).
 
 -export([init/1]).
 
@@ -17,9 +17,10 @@
 
 %% API ========================================
 
-start_child(PoolConnectorArgs) ->
-   supervisor:start_child(?SERVER, [PoolConnectorArgs]).
-
+start_child(Pool,PoolConnectorArgs) ->
+   io:format("(nbdb_pool_sup:start_child/2) ....~n"),
+   Res= supervisor:start_child(?SERVER, [Pool, PoolConnectorArgs]),
+   io:format("(nbdb_pool_sup:start_child/2) result: ~p~n",[Res]).
 
 
 

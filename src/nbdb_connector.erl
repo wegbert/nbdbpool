@@ -5,7 +5,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([start/1, request/1, request/2]).
+-export([start/2, request/1, request/2]).
 
 -define(DEFAULTPOOL, {default_pool,undef,undef}).
 
@@ -28,8 +28,8 @@
 
 %% API =========================================================================================
 
-start(Pool) ->
-    nbdb_connector_sup:start_child({Pool,bla}).
+start(Pool, ConnectorFun) ->
+    nbdb_connector_sup:start_child({Pool, ConnectorFun}).
 
 
 request(Number) when is_number(Number) ->
@@ -40,7 +40,7 @@ request(PoolConnector) ->
 
 request(PoolConnector,Number) ->
     io:format("request for ~p extra connections to pool connector ~p~n",[Number,PoolConnector]),
-    gen_server:cast(PoolConnector, {request, Number, self()}).
+    gen_server:cast(PoolConnector, {request, Number}).
 
 
 %% OTP =========================================================================================
@@ -54,17 +54,24 @@ start_link(PoolConnectorArg) ->
     {Pool,_} = PoolConnectorArg,
     io:format("~p, start_link for ~p~n",[?MODULE, Pool]),
     Name = list_to_atom(atom_to_list(Pool) ++ "_connector"),
-    gen_server:start_link({local, Name}, nbdb_connector, [PoolConnectorArg], []).
+    gen_server:start_link({local, Name}, nbdb_connector, PoolConnectorArg, []).
 
-init([{Pool,Open}]) ->
+init({Pool,Open}) ->
     io:format("starting nbdb_connector for pool ~p~n",[Pool]),
     State = #state{pool=Pool, open_fun=Open},
     {ok, State}.
 
 %%----------------------
+handle_cast({request, Number}, State) ->
+    io:format("~p: got request to open ~p new database connections~n",[State#state.pool, Number]),
+    OpenFun=State#state.open_fun,
+    deliver_connection(State#state.pool, OpenFun() ),
+    {noreply, State};
+
 handle_cast({request, Number, From}, State) ->
     io:format("~p: got request from ~p to open ~p new database connections~n",[State#state.pool, From, Number]),
-    deliver_connection(From, open_connection(State#state.open_fun)),
+    OpenFun=State#state.open_fun,
+    deliver_connection(From, OpenFun() ),
     {noreply, State};
 
 handle_cast(UnknownRequest, State) ->
