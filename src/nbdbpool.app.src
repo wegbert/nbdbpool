@@ -9,9 +9,9 @@
    ]},
   {env,[{pools,[
     { default, #{ 
-        min_idle => 10, 
-        max_idle => 50, 
-        max => 200,
+        min_idle => 0, 
+        max_idle => 2, 
+        max => 1,
         connect_provider => {erlang, self, []}
       }
     },

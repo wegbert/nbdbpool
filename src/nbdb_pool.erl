@@ -3,13 +3,13 @@
 
 -export([start_link/0, start_link/2]).
 
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start/2,add/2, get_connection/2]).
+-export([start/2,add/2, get_connection/2, return_connection/2]).
 
 -define(DEFAULTPOOL, default_pool).
 
--record(state,{pool, connector, max_idle, min_idle, max_total, min_total, total_connections=0, in_use_map=#{}, idle_list=[], wait_queue=queue:new()}).
+-record(state,{pool, connector, max_idle, min_idle, max_total, min_total, total_connections=0, in_use_map=#{}, idle_list=[], wait_queue=queue:new(), wait_queue_len=0, connection_request_len=0}).
 
 %% API =========================================================================================
 
@@ -22,7 +22,17 @@ add(PoolRef,Connection) ->
 
 
 get_connection(Pool, Timeout) ->
-    gen_server:call(Pool, {get_connection, Timeout}, Timeout).
+    try
+        gen_server:call(Pool, {get_connection, Timeout+now_milli_secs()}, Timeout)
+    catch
+        exit:{timeout,_} ->
+          {error, timeout};
+        _:_ -> {error, unknown}
+    end.
+
+return_connection(Pool, Connection) ->
+    gen_server:cast(Pool, {return_connection, self(), Connection}).
+
 
 %% OTP =========================================================================================
 
@@ -36,22 +46,31 @@ start_link(Pool,PoolConfig) ->
     io:format("(nbdb_pool:start_link/2) for pool ~p~n",[Pool]),
     gen_server:start_link({local, Pool}, nbdb_pool, {Pool,PoolConfig}, []).
 
-init({Pool,PoolConfig}) ->
+init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max}}) ->
     io:format("(nbdb_pool:init) starting nbdb_pool for pool ~p~n",[Pool]),
+    io:format("(nbdb_pool:init) config: ~n==============~n~p~n==============~n",[PoolConfig]),
+
+    erlang:process_flag(trap_exit, true),
+
     %% read open and close function from config
     PoolConnector = list_to_atom(atom_to_list(Pool) ++ "_connector"),
-    State = #state{pool=Pool,connector=PoolConnector},
+    State = #state{pool=Pool,connector=PoolConnector, max_idle=MaxIdle, min_idle=MinIdle, max_total=Max, min_total=Min},
     {ok, State}.
 
 
 %%----------------------
-handle_cast({add_connection, Connection}, State0=#state{total_connections=TC}) ->
+handle_cast({add_connection, Connection}, State0=#state{total_connections=TC, connection_request_len=CRL}) ->
     io:format("(~p:~p), handle_cast add_connection for pool ~p~n",[?MODULE,State0#state.pool,State0#state.pool]),
    
-    erlang:link(Connection), 
-    State=process_unused_connection(Connection,State0#state{total_connections=(TC+1)}),
+    erlang:link(Connection),
+    State=process_unused_connection(Connection,State0#state{total_connections=(TC+1),connection_request_len=(CRL-1)}),
 
     {noreply, State};
+
+handle_cast({return_connection, Client, Connection}, State0) ->
+    io:format("(~p:~p), handle_cast return_connection for pool ~p~n",[?MODULE,State0#state.pool,State0#state.pool]), 
+    State=return_from_client(Connection, Client, State0),
+    {noreply, process_unused_connection(Connection,State)};
 
 handle_cast(UnknownCast, State) ->
     io:format("(~p:~p), handle_cast, unknown cast: ~p~n",[?MODULE,State#state.pool,UnknownCast]),
@@ -60,20 +79,47 @@ handle_cast(UnknownCast, State) ->
 
 %%----------------------
 
-handle_call({get_connection, Timeout}, Client={Pid,_}, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ}) ->
+handle_call({get_connection, Timeout}, Client={Pid,_}, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ, wait_queue_len=WQL, connection_request_len=CRL}) ->
     io:format("(~p:~p), handle_call:get_connection~n",[?MODULE,State0#state.pool]),
-    State2 = case get_from_idle_list(State0) of
-      {ok, Connection, State1}  -> deliver_to_client(Connection, Client, State1);
-      _			       -> case TC < Max of true -> get_extra_connections(1,State0) end,
-                                  State0#state{wait_queue=queue:in({Client,(now_milli_secs()+Timeout)},WQ)}
-    end,
-    {noreply, State2};
+
+    case Timeout<now_milli_secs() of
+	true -> {reply, timeout, State0};
+        _    ->
+
+                 State2 = case get_from_idle_list(State0) of
+                              {ok, Connection, State1}  -> deliver_to_client(Connection, Client, State1);
+                              _			        -> NewCRL = case (TC+CRL) < Max of true -> get_extra_connections(1,State0), CRL+1; _ -> CRL  end,
+                                                           State0#state{wait_queue=queue:in({Client,Timeout},WQ),wait_queue_len=(WQL+1),connection_request_len=NewCRL}
+                 end,
+                 {noreply, State2}
+     end;
 
 
 
 handle_call(Request, From, State) ->
     io:format("~p: got call for unknown request ~p from ~p~n",[State#state.pool, Request, From]),
     {reply, error, State}.
+
+
+
+%%----------------------
+
+handle_info({'EXIT', Pid, Reason},State) ->
+    io:format("(nbdb_pool:handle_info) EXIT from pid ~p for reason ~p~n",[Pid, Reason]),
+    {noreply, State};
+
+handle_info(Info, State) ->
+    io:format("(nbdb_pool:handle_info) unhandled info: ~p~n",[Info]),
+    {noreply, State}.
+
+
+
+
+
+
+
+
+
 
 %% INTERNAL ======================================================================================
 
@@ -89,6 +135,7 @@ deliver_to_client(Connection, Client={Pid,_}, State=#state{in_use_map=IUM}) ->
     State#state{in_use_map=IUM#{Pid=>NewEntry}}.
 
 return_from_client(Connection, Pid, State=#state{in_use_map=IUM}) ->
+    io:format("pid: ~n~p~n,  ium: ~n~p~n",[Pid,IUM]),
     NewEntry = case maps:find(Pid,IUM) of
       {ok, List} -> lists:delete(Connection,List);
        _ -> []
@@ -109,12 +156,13 @@ get_from_idle_list(State=#state{idle_list=[{Connection,_}|Idle]}) ->
     {ok, Connection, State#state{idle_list=Idle}}.
 
     
-process_unused_connection(Connection, State=#state{idle_list=Idle,wait_queue=WQ}) ->
+process_unused_connection(Connection, State=#state{idle_list=Idle,wait_queue=WQ, wait_queue_len=WQL}) ->
     case queue:out(WQ) of
       {empty, _} -> add_to_idle_list(Connection, State);
-      {{value, {Client,Timeout}}, NewQ} -> case Timeout < now_milli_secs() of
-			true -> process_unused_connection(Connection, State#state{wait_queue=NewQ});
-                        _    -> deliver_to_client(Connection,Client,  State#state{wait_queue=NewQ})
+      {{value, {Client,Timeout}}, NewQ} -> NewWQL=WQL-1,
+                                           case Timeout < now_milli_secs() of
+			                   true -> process_unused_connection(Connection, State#state{wait_queue=NewQ, wait_queue_len=NewWQL});
+                                           _    -> deliver_to_client(Connection,Client,  State#state{wait_queue=NewQ, wait_queue_len=NewWQL})
                 end
     end.
 
