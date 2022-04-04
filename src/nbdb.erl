@@ -61,8 +61,8 @@ info() ->
 get_connection(Pool) ->
     get_connection(Pool,5000).
 
-get_connection(_Pool, _Timeout) ->
-    ok.
+get_connection(Pool, Timeout) ->
+    nbdb_pool:get_connection(Pool, Timeout). 
 
 
 return_connection(_Pool, _Connection) ->

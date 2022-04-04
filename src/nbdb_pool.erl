@@ -5,7 +5,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([start/2,add/2]).
+-export([start/2,add/2, get_connection/2]).
 
 -define(DEFAULTPOOL, default_pool).
 
@@ -20,6 +20,9 @@ start(Pool, PoolConfig) ->
 add(PoolRef,Connection) ->
     gen_server:cast(PoolRef,{add_connection, Connection}).
 
+
+get_connection(Pool, Timeout) ->
+    gen_server:call(Pool, {get_connection, Timeout}, Timeout).
 
 %% OTP =========================================================================================
 
@@ -36,7 +39,8 @@ start_link(Pool,PoolConfig) ->
 init({Pool,PoolConfig}) ->
     io:format("(nbdb_pool:init) starting nbdb_pool for pool ~p~n",[Pool]),
     %% read open and close function from config
-    State = #state{pool=Pool},
+    PoolConnector = list_to_atom(atom_to_list(Pool) ++ "_connector"),
+    State = #state{pool=Pool,connector=PoolConnector},
     {ok, State}.
 
 
@@ -55,6 +59,18 @@ handle_cast(UnknownCast, State) ->
 
 
 %%----------------------
+
+handle_call({get_connection, Timeout}, Client={Pid,_}, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ}) ->
+    io:format("(~p:~p), handle_call:get_connection~n",[?MODULE,State0#state.pool]),
+    State2 = case get_from_idle_list(State0) of
+      {ok, Connection, State1}  -> deliver_to_client(Connection, Client, State1);
+      _			       -> case TC < Max of true -> get_extra_connections(1,State0) end,
+                                  State0#state{wait_queue=queue:in({Client,(now_milli_secs()+Timeout)},WQ)}
+    end,
+    {noreply, State2};
+
+
+
 handle_call(Request, From, State) ->
     io:format("~p: got call for unknown request ~p from ~p~n",[State#state.pool, Request, From]),
     {reply, error, State}.
@@ -107,6 +123,8 @@ process_unused_connection(Connection, State=#state{idle_list=Idle,wait_queue=WQ}
 recalculate_total_connections(State=#state{in_use_map=IUM,idle_list=Idle}) ->
     State#state{total_connections=(length(Idle) + maps:fold(fun(_Key,Value,AccIn) -> AccIn+length(Value) end, 0, IUM))}.
 
+get_extra_connections(Number, State=#state{connector=PoolConnector}) ->
+    nbdb_connector:request(PoolConnector,Number).
 
 now_milli_secs() ->
   erlang:monotonic_time(milli_seconds).
