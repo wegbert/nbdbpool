@@ -5,7 +5,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([request/1, request/2]).
+-export([start/1, request/1, request/2]).
 
 -define(DEFAULTPOOL, {default_pool,undef,undef}).
 
@@ -27,6 +27,11 @@
 
 
 %% API =========================================================================================
+
+start(Pool) ->
+    nbdb_connector_sup:start_child({Pool,bla}).
+
+
 request(Number) when is_number(Number) ->
     request(?DEFAULTPOOL,Number);
 
@@ -46,7 +51,7 @@ start_link() ->
     start_link(?DEFAULTPOOL).
 
 start_link(PoolConnectorArg) ->
-    {Pool,_,_} = PoolConnectorArg,
+    {Pool,_} = PoolConnectorArg,
     io:format("~p, start_link for ~p~n",[?MODULE, Pool]),
     Name = list_to_atom(atom_to_list(Pool) ++ "_connector"),
     gen_server:start_link({local, Name}, nbdb_connector, [PoolConnectorArg], []).

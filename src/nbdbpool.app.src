@@ -7,7 +7,28 @@
    [kernel,
     stdlib
    ]},
-  {env,[]},
+  {env,[{pools,[
+    { default, #{ 
+        min_idle => 10, 
+        max_idle => 50, 
+        max => 200, 
+        min => 50
+         
+      }
+    },
+    { ocsdb, #{
+        connect_provider => {epgsql, connect, ["localhost", "USER", "PASSWORD", [ {database, "DATABASE"},
+                                                                                  {port,12390},
+                                                                                  {ssl,true},
+                                                                                  {application_name,"NAME"},
+                                                                                  {codecs, [ {epgsql_codec_bit, []}, {epgsql_codec_timestamp, []} ]}
+                                                                                 ]
+                                              ]
+                            },
+        close_provider => {epgsql, close, []}
+      }
+    }
+  ]}]},
   {modules, []},
 
   {licenses, ["Apache 2.0"]},

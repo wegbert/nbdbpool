@@ -5,13 +5,16 @@
 
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([add/2]).
+-export([start/1,add/2]).
 
 -define(DEFAULTPOOL, default_pool).
 
--record(state,{pool}).
+-record(state,{pool, connector, max_idle, min_idle, max_total, min_total, in_use_map, idle_list, wait_queue}).
 
 %% API =========================================================================================
+
+start(Pool) ->
+    nbdb_pool_sup:start_child(Pool).
 
 add(PoolRef,Connection) ->
     gen_server:cast(PoolRef,{add_connection, Connection}).
