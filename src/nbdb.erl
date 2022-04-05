@@ -2,7 +2,7 @@
 
 
 %% public
--export([test/0, show_config/0, start_pool/1, stop_pool/1, info/0, get_connection/1, get_connection/2, return_connection/2, add_connection/0, add_connection/1, add_connection/2]).
+-export([test_reset/2, test/0, show_config/0, start_pool/1, stop_pool/1, info/0, get_connection/1, get_connection/2, return_connection/2, add_connection/0, add_connection/1, add_connection/2]).
 
 %% private
 -export([start_pools/1]).
@@ -13,10 +13,14 @@
                       max=>1,
                       min=>0,
                       connect_provider=>{io,format,["no connect_provider configured!~n"]},
-                      close_provider=>{io,format,["no close_provider configured!~n"]}
+                      close_provider=>{io,format,["no close_provider configured!~n"]},
+                      reset_provider=>{?MODULE,test_reset,["no reset_provider configured!~n"]}
 }).
 
 %% interface for this application
+
+test_reset(A,B) ->
+   io:format("reset: ~p~n",[A]).
 
 add_connection() ->
     add_connection(default_pool,1).
@@ -88,21 +92,23 @@ start_pools([{Pool,ConfigMap}|Rest], Default) ->
 
     %% #{min_idle:=MinIdle, max_idle:MaxIdle, min:=Min, max:=Max, connect_provider:=ConnectProvider, close_provider:=CloseProvider} = maps:merge(Default,ConfigMap),
 
-    PoolConfig = #{connect_provider:=ConnectProvider, close_provider:=CloseProvider} = maps:merge(Default,ConfigMap),
+    PoolConfig = #{connect_provider:=ConnectProvider, close_provider:=CloseProvider, reset_provider:=ResetProvider} = maps:merge(Default,ConfigMap),
 
     %% create connect/close funs
     Connect_fun = create_fun(ConnectProvider),    %% fun(Pool) -> io:format("start new connection for pool ~p~n",[Pool]) end,
-    Close_fun = create_fun(CloseProvider),   %%fun(Pool) -> io:format("start close connection for pool ~p~n",[Pool]) end,
+    Close_fun = create_fun_1(CloseProvider),   %%fun(Pool) -> io:format("start close connection for pool ~p~n",[Pool]) end,
+    Reset_fun = create_fun_1(ResetProvider),
 
     %% start chuld nbdb_connector
     nbdb_connector:start(Pool, Connect_fun),
 
     %% start child nbdb_pool
 
-    nbdb_pool:start(Pool, PoolConfig#{connect_fun=>Connect_fun,close_fun=>Close_fun}),
+    nbdb_pool:start(Pool, PoolConfig#{connect_fun=>Connect_fun,close_fun=>Close_fun,reset_fun=>Reset_fun}),
     
     start_pools(Rest, Default).
 
 create_fun({Mod,Func,Args}) ->
     fun() -> erlang:apply(Mod,Func,Args) end.
-
+create_fun_1({Mod,Func,Args}) ->
+    fun(X) -> erlang:apply(Mod,Func,[X|Args]) end.

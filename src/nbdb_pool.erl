@@ -9,7 +9,7 @@
 
 -define(DEFAULTPOOL, default_pool).
 
--record(state,{pool, connector, max_idle, min_idle, max_total, min_total, total_connections=0, in_use_map=#{}, idle_list=[], wait_queue=queue:new(), wait_queue_len=0, connection_request_len=0}).
+-record(state,{pool, connector, connect_fun, close_fun, reset_fun, max_idle, min_idle, max_total, min_total, total_connections=0, in_use_map=#{}, idle_list=[], wait_queue=queue:new(), wait_queue_len=0, connection_request_len=0}).
 
 %% API =========================================================================================
 
@@ -46,7 +46,7 @@ start_link(Pool,PoolConfig) ->
     io:format("(nbdb_pool:start_link/2) for pool ~p~n",[Pool]),
     gen_server:start_link({local, Pool}, nbdb_pool, {Pool,PoolConfig}, []).
 
-init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max}}) ->
+init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max,close_fun:=CloseFun,connect_fun:=ConnectFun,reset_fun:=ResetFun}}) ->
     io:format("(nbdb_pool:init) starting nbdb_pool for pool ~p~n",[Pool]),
     io:format("(nbdb_pool:init) config: ~n==============~n~p~n==============~n",[PoolConfig]),
 
@@ -54,7 +54,7 @@ init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max}})
 
     %% read open and close function from config
     PoolConnector = list_to_atom(atom_to_list(Pool) ++ "_connector"),
-    State = #state{pool=Pool,connector=PoolConnector, max_idle=MaxIdle, min_idle=MinIdle, max_total=Max, min_total=Min},
+    State = #state{pool=Pool,connector=PoolConnector, connect_fun=ConnectFun, close_fun=CloseFun, reset_fun=ResetFun, max_idle=MaxIdle, min_idle=MinIdle, max_total=Max, min_total=Min},
     {ok, State}.
 
 
@@ -104,8 +104,16 @@ handle_call(Request, From, State) ->
 
 %%----------------------
 
-handle_info({'EXIT', Pid, Reason},State) ->
+handle_info({'EXIT', Pid, Reason},State0=#state{in_use_map=IUM}) ->
     io:format("(nbdb_pool:handle_info) EXIT from pid ~p for reason ~p~n",[Pid, Reason]),
+    %% Pid can be a db connection or a client.
+    State = case maps:find(Pid,IUM) of
+	{ok, Connections} -> State1 = State0#state{in_use_map=maps:remove(Pid,IUM)},
+                             reclaim_connections(Connections,State1);
+        _		  -> %% Pid is DB connection
+                             cleanup_connection(Pid,State0)
+    end,
+
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -113,17 +121,7 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 
-
-
-
-
-
-
-
-
 %% INTERNAL ======================================================================================
-
-
 
 deliver_to_client(Connection, Client={Pid,_}, State=#state{in_use_map=IUM}) ->
     gen_server:reply(Client, {ok, Connection}),
@@ -175,7 +173,36 @@ get_extra_connections(Number, State=#state{connector=PoolConnector}) ->
     nbdb_connector:request(PoolConnector,Number).
 
 now_milli_secs() ->
-  erlang:monotonic_time(milli_seconds).
+    erlang:monotonic_time(milli_seconds).
+
+%% reclaim_connecitons occurs when a client using a connection dies
+%% Connection is allready taken out of in_use_map
+reclaim_connections([], State) ->
+    State;
+reclaim_connections([Connection|Rest], State=#state{reset_fun=ResetFun}) ->
+    io:format("reclaim connnection: ~p~n",[Connection]),
+    ResetFun(Connection),
+    reclaim_connections(Rest,process_unused_connection(Connection,State)).
+
+%% cleanup_conneciton is called when a db connecition dies
+cleanup_connection(Connection, State=#state{idle_list=IL,in_use_map=IUM, total_connections=TC}) ->
+    %% connection can be in idle list (idle_list -> [{Pid,Time},..]) or in in use map (in_use_map)
+   
+    NewIL=proplists:delete(Connection,IL),
+    NewIUM = maps:filtermap(fun(Client,ConList) -> 
+      %% case lists:delete(Connection,ConList) of
+       case lists:filter(fun(Item) -> Item =/= Connection end, ConList) of
+           ConList -> true;
+           []      -> erlang:unlink(Client),
+                            %%erlang:exit(Client, db_gone),
+                            false;
+           NewList -> {true, NewList}
+       end
+    end, IUM),
+    State#state{idle_list=NewIL, in_use_map=NewIUM, total_connections=(TC-1)}.
+
+
+
 
 
 
