@@ -79,7 +79,7 @@ handle_cast(UnknownCast, State) ->
 
 %%----------------------
 
-handle_call({get_connection, Timeout}, Client={Pid,_}, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ, wait_queue_len=WQL, connection_request_len=CRL}) ->
+handle_call({get_connection, Timeout}, Client, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ, wait_queue_len=WQL, connection_request_len=CRL}) ->
     io:format("(~p:~p), handle_call:get_connection~n",[?MODULE,State0#state.pool]),
 
     case Timeout<now_milli_secs() of
@@ -88,8 +88,8 @@ handle_call({get_connection, Timeout}, Client={Pid,_}, State0=#state{total_conne
 
                  State2 = case get_from_idle_list(State0) of
                               {ok, Connection, State1}  -> deliver_to_client(Connection, Client, State1);
-                              _			        -> NewCRL = case (TC+CRL) < Max of true -> get_extra_connections(1,State0), CRL+1; _ -> CRL  end,
-                                                           State0#state{wait_queue=queue:in({Client,Timeout},WQ),wait_queue_len=(WQL+1),connection_request_len=NewCRL}
+                              _			        -> State1 = case (TC+CRL) < Max of true -> get_extra_connections(1,State0); _ -> State0 end,
+                                                           State1#state{wait_queue=queue:in({Client,Timeout},WQ),wait_queue_len=(WQL+1)}
                  end,
                  {noreply, State2}
      end;
@@ -154,7 +154,7 @@ get_from_idle_list(State=#state{idle_list=[{Connection,_}|Idle]}) ->
     {ok, Connection, State#state{idle_list=Idle}}.
 
     
-process_unused_connection(Connection, State=#state{idle_list=Idle,wait_queue=WQ, wait_queue_len=WQL}) ->
+process_unused_connection(Connection, State=#state{wait_queue=WQ, wait_queue_len=WQL}) ->
     case queue:out(WQ) of
       {empty, _} -> add_to_idle_list(Connection, State);
       {{value, {Client,Timeout}}, NewQ} -> NewWQL=WQL-1,
@@ -169,8 +169,9 @@ process_unused_connection(Connection, State=#state{idle_list=Idle,wait_queue=WQ,
 recalculate_total_connections(State=#state{in_use_map=IUM,idle_list=Idle}) ->
     State#state{total_connections=(length(Idle) + maps:fold(fun(_Key,Value,AccIn) -> AccIn+length(Value) end, 0, IUM))}.
 
-get_extra_connections(Number, State=#state{connector=PoolConnector}) ->
-    nbdb_connector:request(PoolConnector,Number).
+get_extra_connections(Number, State=#state{connector=PoolConnector, connection_request_len=CRL}) ->
+    nbdb_connector:request(PoolConnector,Number),
+    State#state{connection_request_len=CRL+1}.
 
 now_milli_secs() ->
     erlang:monotonic_time(milli_seconds).
@@ -185,8 +186,11 @@ reclaim_connections([Connection|Rest], State=#state{reset_fun=ResetFun}) ->
     reclaim_connections(Rest,process_unused_connection(Connection,State)).
 
 %% cleanup_conneciton is called when a db connecition dies
-cleanup_connection(Connection, State=#state{idle_list=IL,in_use_map=IUM, total_connections=TC}) ->
+cleanup_connection(Connection, State0=#state{idle_list=IL,in_use_map=IUM, total_connections=TC}) ->
     %% connection can be in idle list (idle_list -> [{Pid,Time},..]) or in in use map (in_use_map)
+
+    %% since a connection has perished, request a new one:
+    State=get_extra_connections(1,State0),
    
     NewIL=proplists:delete(Connection,IL),
     NewIUM = maps:filtermap(fun(Client,ConList) -> 
