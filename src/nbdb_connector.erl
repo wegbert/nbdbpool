@@ -5,7 +5,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([start/2, request/1, request/2]).
+-export([start/2, request/1, request/2, request/3]).
 
 -define(DEFAULTPOOL, {default_pool,undef,undef}).
 
@@ -42,6 +42,10 @@ request(PoolConnector,Number) ->
     io:format("request for ~p extra connections to pool connector ~p~n",[Number,PoolConnector]),
     gen_server:cast(PoolConnector, {request, Number}).
 
+request(PoolConnector,Number,Ref) ->
+    io:format("request for ~p extra connections to pool connector ~p~n",[Number,PoolConnector]),
+    gen_server:cast(PoolConnector, {request, Number, Ref}).
+
 
 %% OTP =========================================================================================
 
@@ -65,13 +69,13 @@ init({Pool,Open}) ->
 handle_cast({request, Number}, State) ->
     io:format("~p: got request to open ~p new database connections~n",[State#state.pool, Number]),
     OpenFun=State#state.open_fun,
-    deliver_connection(State#state.pool, OpenFun() ),
+    lists:map( fun(_) -> deliver_connection( State#state.pool, OpenFun() ) end, lists:seq(1, Number)),
     {noreply, State};
 
 handle_cast({request, Number, From}, State) ->
     io:format("~p: got request from ~p to open ~p new database connections~n",[State#state.pool, From, Number]),
     OpenFun=State#state.open_fun,
-    deliver_connection(From, OpenFun() ),
+    lists:map( fun(_) -> deliver_connection( From, OpenFun() ) end, lists:seq(1, Number)),
     {noreply, State};
 
 handle_cast(UnknownRequest, State) ->
@@ -86,8 +90,8 @@ handle_call(Request, From, State) ->
 %% INTERNAL ======================================================================================
 
 
-open_connection(OpenFun) ->
-    OpenFun().
+%%open_connection(OpenFun) ->
+%%    OpenFun().
     
 
 deliver_connection(PoolRef,Connection) ->

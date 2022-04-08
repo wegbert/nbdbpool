@@ -8,7 +8,8 @@
     stdlib
    ]},
   {env,[{pools,[
-    { default, #{ 
+    { default, #{
+        min => 3, 
         min_idle => 0, 
         max_idle => 2, 
         max => 1,

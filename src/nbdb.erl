@@ -17,9 +17,10 @@
                       reset_provider=>{?MODULE,test_reset,["no reset_provider configured!~n"]}
 }).
 
+
 %% interface for this application
 
-test_reset(A,B) ->
+test_reset(A,_B) ->
    io:format("reset: ~p~n",[A]).
 
 add_connection() ->
@@ -40,9 +41,9 @@ test() ->
 
 
 show_config() ->
-    What = application:get_env(nbdbpool,pools),
-    io:format("what: ~p~n",[What]).
-    %%show_config(ConfigPools).
+    {ok, ConfigPools} = application:get_env(nbdbpool,pools),
+    %%io:format("what: ~p~n",[What]).
+    show_config(ConfigPools).
 show_config([]) ->
      ok;
 show_config([{Pool,Config}|Rest]) ->
@@ -59,7 +60,20 @@ stop_pool(_Pool) ->
 
 
 info() ->
+    Pools = supervisor:which_children(nbdb_pool_sup),
+    PoolPids = lists:map(fun({undefined,Pid,worker,[nbdb_pool]}) -> Pid end, Pools),
+    PoolStates = lists:map(fun(Pid) -> gen_server:call(Pid, get_info) end, PoolPids),
+
+    io:format("------------------------------------------------------------------~n"),
+    io:format("| ~-15s| ~-6s| ~-6s| ~-6s| ~-6s| ~-6s| ~-6s|~n",["pool","total","in use","idle","waiting","requested","messages"]),
+    io:format("|----------------+---------------+-------+-------+-------+-------|~n"),
+
+    lists:map(fun(  {state, Pool, _Connector, _Connect_fun, _Close_fun, _Reset_fun, _Max_idle, _Min_idle, _Max_total, _Min_total, Iotal_connections, _In_use_map, Idle_list, _Wait_queue, Wait_queue_len, Connection_request_len} ) ->
+              io:format("| ~-15w| ~6w| ~6w| ~6w| ~6w| ~6w| ~6w|~n",[Pool, Iotal_connections, (Iotal_connections - length(Idle_list)), length(Idle_list), Wait_queue_len, Connection_request_len, 9999])
+              end, PoolStates),
+    io:format("------------------------------------------------------------------~n"),
     ok.
+
 
 
 get_connection(Pool) ->

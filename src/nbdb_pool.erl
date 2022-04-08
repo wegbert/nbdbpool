@@ -18,7 +18,7 @@ start(Pool, PoolConfig) ->
     nbdb_pool_sup:start_child(Pool, PoolConfig).
 
 add(PoolRef,Connection) ->
-    gen_server:cast(PoolRef,{add_connection, Connection}).
+    gen_server:cast(PoolRef,{add_connection, Connection, PoolRef}).
 
 
 get_connection(Pool, Timeout) ->
@@ -33,6 +33,7 @@ get_connection(Pool, Timeout) ->
 return_connection(Pool, Connection) ->
     gen_server:cast(Pool, {return_connection, self(), Connection}).
 
+    
 
 %% OTP =========================================================================================
 
@@ -54,16 +55,40 @@ init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max,cl
 
     %% read open and close function from config
     PoolConnector = list_to_atom(atom_to_list(Pool) ++ "_connector"),
-    State = #state{pool=Pool,connector=PoolConnector, connect_fun=ConnectFun, close_fun=CloseFun, reset_fun=ResetFun, max_idle=MaxIdle, min_idle=MinIdle, max_total=Max, min_total=Min},
+
+    %% instruct to do startup things:
+    gen_server:cast(self(),init2),
+    
+
+
+    State = #state{pool=Pool,connector=PoolConnector, connect_fun=ConnectFun, close_fun=CloseFun, reset_fun=ResetFun, max_idle=MaxIdle, min_idle=MinIdle, max_total=Max, min_total=Min, connection_request_len=0},
     {ok, State}.
 
 
+init2(State0) ->
+    State1=recalculate_total_connections(State0),
+    #state{min_total=Min,total_connections=TC}=State1,
+    io:format("Min: ~p, TC: ~p~n",[Min,TC]),
+    State = case ((Min-TC) > 0) of			%% what todo with pending connections ()
+       true -> get_extra_connections((Min-TC),State1);
+       _    -> State1
+    end,
+    State.
+
 %%----------------------
-handle_cast({add_connection, Connection}, State0=#state{total_connections=TC, connection_request_len=CRL}) ->
-    io:format("(~p:~p), handle_cast add_connection for pool ~p~n",[?MODULE,State0#state.pool,State0#state.pool]),
+handle_cast(init2, State) ->
+    {noreply, init2(State)};
+
+handle_cast({add_connection, Connection, From}, State0=#state{total_connections=TC, connection_request_len=CRL}) ->
+    io:format("(~p:~p), handle_cast add_connection for pool ~p from: ~p~n",[?MODULE,State0#state.pool,State0#state.pool,From]),
    
     erlang:link(Connection),
-    State=process_unused_connection(Connection,State0#state{total_connections=(TC+1),connection_request_len=(CRL-1)}),
+    Self= self(),
+    NewCRL = case From of
+        Self -> CRL-1;
+        _	-> CRL
+    end,
+    State=process_unused_connection(Connection,State0#state{total_connections=(TC+1),connection_request_len=NewCRL}),
 
     {noreply, State};
 
@@ -94,6 +119,8 @@ handle_call({get_connection, Timeout}, Client, State0=#state{total_connections=T
                  {noreply, State2}
      end;
 
+handle_call(get_info, _From, State) ->
+    {reply, State, State};
 
 
 handle_call(Request, From, State) ->
@@ -170,8 +197,9 @@ recalculate_total_connections(State=#state{in_use_map=IUM,idle_list=Idle}) ->
     State#state{total_connections=(length(Idle) + maps:fold(fun(_Key,Value,AccIn) -> AccIn+length(Value) end, 0, IUM))}.
 
 get_extra_connections(Number, State=#state{connector=PoolConnector, connection_request_len=CRL}) ->
-    nbdb_connector:request(PoolConnector,Number),
-    State#state{connection_request_len=CRL+1}.
+    io:format("get_extra_connections: ~p~n",[Number]),
+    nbdb_connector:request(PoolConnector,Number,self()),
+    State#state{connection_request_len=CRL+Number}.
 
 now_milli_secs() ->
     erlang:monotonic_time(milli_seconds).
