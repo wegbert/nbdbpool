@@ -69,7 +69,11 @@ info() ->
     io:format("|----------------+---------------+-------+-------+-------+-------|~n"),
 
     lists:map(fun(  {state, Pool, _Connector, _Connect_fun, _Close_fun, _Reset_fun, _Max_idle, _Min_idle, _Max_total, _Min_total, Iotal_connections, _In_use_map, Idle_list, _Wait_queue, Wait_queue_len, Connection_request_len} ) ->
-              io:format("| ~-15w| ~6w| ~6w| ~6w| ~6w| ~6w| ~6w|~n",[Pool, Iotal_connections, (Iotal_connections - length(Idle_list)), length(Idle_list), Wait_queue_len, Connection_request_len, 9999])
+	      
+              {_,Messages} = erlang:process_info(whereis(Pool), messages),
+              MessagesSize=length(Messages),
+
+              io:format("| ~-15w| ~6w| ~6w| ~6w| ~6w| ~6w| ~6w|~n",[Pool, Iotal_connections, (Iotal_connections - length(Idle_list)), length(Idle_list), Wait_queue_len, Connection_request_len, MessagesSize])
               end, PoolStates),
     io:format("------------------------------------------------------------------~n"),
     ok.

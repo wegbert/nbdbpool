@@ -137,7 +137,7 @@ handle_info({'EXIT', Pid, Reason},State0=#state{in_use_map=IUM}) ->
     State = case maps:find(Pid,IUM) of
 	{ok, Connections} -> State1 = State0#state{in_use_map=maps:remove(Pid,IUM)},
                              reclaim_connections(Connections,State1);
-        _		  -> %% Pid is DB connection
+        _		  -> %% Pid is probably a DB connection
                              cleanup_connection(Pid,State0)
     end,
 
@@ -216,9 +216,6 @@ reclaim_connections([Connection|Rest], State=#state{reset_fun=ResetFun}) ->
 %% cleanup_conneciton is called when a db connecition dies
 cleanup_connection(Connection, State0=#state{idle_list=IL,in_use_map=IUM, total_connections=TC}) ->
     %% connection can be in idle list (idle_list -> [{Pid,Time},..]) or in in use map (in_use_map)
-
-    %% since a connection has perished, request a new one:
-    State=get_extra_connections(1,State0),
    
     NewIL=proplists:delete(Connection,IL),
     NewIUM = maps:filtermap(fun(Client,ConList) -> 
@@ -231,7 +228,12 @@ cleanup_connection(Connection, State0=#state{idle_list=IL,in_use_map=IUM, total_
            NewList -> {true, NewList}
        end
     end, IUM),
-    State#state{idle_list=NewIL, in_use_map=NewIUM, total_connections=(TC-1)}.
+
+    case (NewIL==IL) and (NewIUM==IUM) of
+       true ->  State0;
+       _    ->  State=get_extra_connections(1,State0),
+                State#state{idle_list=NewIL, in_use_map=NewIUM, total_connections=(TC-1)}
+    end.
 
 
 
