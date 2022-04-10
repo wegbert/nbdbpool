@@ -40,11 +40,11 @@ return_connection(Pool, Connection) ->
 
 
 start_link() ->
-    io:format("(nbdb_pool:start_link/0)~n"),
+    %%io:format("(nbdb_pool:start_link/0)~n"),
     start_link(?DEFAULTPOOL,#{}).
 
 start_link(Pool,PoolConfig) ->
-    io:format("(nbdb_pool:start_link/2) for pool ~p~n",[Pool]),
+    %%io:format("(nbdb_pool:start_link/2) for pool ~p~n",[Pool]),
     gen_server:start_link({local, Pool}, nbdb_pool, {Pool,PoolConfig}, []).
 
 init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max,close_fun:=CloseFun,connect_fun:=ConnectFun,reset_fun:=ResetFun}}) ->
@@ -68,7 +68,7 @@ init({Pool,PoolConfig=#{min_idle:=MinIdle,max_idle:=MaxIdle,min:=Min,max:=Max,cl
 init2(State0) ->
     State1=recalculate_total_connections(State0),
     #state{min_total=Min,total_connections=TC}=State1,
-    io:format("Min: ~p, TC: ~p~n",[Min,TC]),
+    %%io:format("Min: ~p, TC: ~p~n",[Min,TC]),
     State = case ((Min-TC) > 0) of			%% what todo with pending connections ()
        true -> get_extra_connections((Min-TC),State1);
        _    -> State1
@@ -80,7 +80,7 @@ handle_cast(init2, State) ->
     {noreply, init2(State)};
 
 handle_cast({add_connection, Connection, From}, State0=#state{total_connections=TC, connection_request_len=CRL}) ->
-    io:format("(~p:~p), handle_cast add_connection for pool ~p from: ~p~n",[?MODULE,State0#state.pool,State0#state.pool,From]),
+    %%io:format("(~p:~p), handle_cast add_connection for pool ~p from: ~p~n",[?MODULE,State0#state.pool,State0#state.pool,From]),
    
     erlang:link(Connection),
     Self= self(),
@@ -93,7 +93,7 @@ handle_cast({add_connection, Connection, From}, State0=#state{total_connections=
     {noreply, State};
 
 handle_cast({return_connection, Client, Connection}, State0) ->
-    io:format("(~p:~p), handle_cast return_connection for pool ~p~n",[?MODULE,State0#state.pool,State0#state.pool]), 
+    %%io:format("(~p:~p), handle_cast return_connection for pool ~p~n",[?MODULE,State0#state.pool,State0#state.pool]), 
     State=return_from_client(Connection, Client, State0),
     {noreply, process_unused_connection(Connection,State)};
 
@@ -105,7 +105,7 @@ handle_cast(UnknownCast, State) ->
 %%----------------------
 
 handle_call({get_connection, Timeout}, Client, State0=#state{total_connections=TC, max_total=Max, wait_queue=WQ, wait_queue_len=WQL, connection_request_len=CRL}) ->
-    io:format("(~p:~p), handle_call:get_connection~n",[?MODULE,State0#state.pool]),
+    %%io:format("(~p:~p), handle_call:get_connection~n",[?MODULE,State0#state.pool]),
 
     case Timeout<now_milli_secs() of
 	true -> {reply, timeout, State0};
@@ -160,7 +160,6 @@ deliver_to_client(Connection, Client={Pid,_}, State=#state{in_use_map=IUM}) ->
     State#state{in_use_map=IUM#{Pid=>NewEntry}}.
 
 return_from_client(Connection, Pid, State=#state{in_use_map=IUM}) ->
-    io:format("pid: ~n~p~n,  ium: ~n~p~n",[Pid,IUM]),
     NewEntry = case maps:find(Pid,IUM) of
       {ok, List} -> lists:delete(Connection,List);
        _ -> []
@@ -197,7 +196,7 @@ recalculate_total_connections(State=#state{in_use_map=IUM,idle_list=Idle}) ->
     State#state{total_connections=(length(Idle) + maps:fold(fun(_Key,Value,AccIn) -> AccIn+length(Value) end, 0, IUM))}.
 
 get_extra_connections(Number, State=#state{connector=PoolConnector, connection_request_len=CRL}) ->
-    io:format("get_extra_connections: ~p~n",[Number]),
+    %%io:format("get_extra_connections: ~p~n",[Number]),
     nbdb_connector:request(PoolConnector,Number,self()),
     State#state{connection_request_len=CRL+Number}.
 
@@ -209,7 +208,7 @@ now_milli_secs() ->
 reclaim_connections([], State) ->
     State;
 reclaim_connections([Connection|Rest], State=#state{reset_fun=ResetFun}) ->
-    io:format("reclaim connnection: ~p~n",[Connection]),
+    %%io:format("reclaim connnection: ~p~n",[Connection]),
     ResetFun(Connection),
     reclaim_connections(Rest,process_unused_connection(Connection,State)).
 

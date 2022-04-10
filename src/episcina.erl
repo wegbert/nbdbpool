@@ -13,6 +13,6 @@ get_connection(Pool, Timeout) ->
     nbdb:get_connection(Pool, Timeout).
 
 return_connection(Pool, DB) ->
-    nbdn:return_conneciton(Pool, DB).
+    nbdb:return_connection(Pool, DB).
 
 
