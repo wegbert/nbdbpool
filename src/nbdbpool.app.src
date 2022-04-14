@@ -1,38 +1,32 @@
-{application, nbdbpool,
+{application,
+ nbdbpool,
  [{description, "An OTP application"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {nbdbpool_app, []}},
-  {applications,
-   [kernel,
-    stdlib
-   ]},
-  {env,[{pools,[
-    { default, #{
-        min => 3, 
-        min_idle => 0, 
-        max_idle => 2, 
-        max => 1,
-        connect_provider => {erlang, self, []}
-      }
-    },
-    { ocsdb, #{
-        connect_provider => {epgsql, connect, ["localhost", "USER", "PASSWORD", [ {database, "DATABASE"},
-                                                                                  {port,12390},
-                                                                                  {ssl,true},
-                                                                                  {application_name,"NAME"},
-                                                                                  {codecs, [ {epgsql_codec_bit, []}, {epgsql_codec_timestamp, []} ]}
-                                                                                 ]
-                                              ]
-                            },
-        close_provider => {epgsql, close, []}
-      }
-    },
-    { ocsdb02, #{}
-    }
-  ]}]},
+  {applications, [kernel, stdlib]},
+  {env,
+   [{pools,
+     [{default,
+       #{min => 3,
+         min_idle => 0,
+         max_idle => 2,
+         max => 1,
+         connect_provider => {erlang, self, []}}},
+      {ocsdb,
+       #{connect_provider =>
+             {epgsql,
+              connect,
+              ["localhost",
+               "USER",
+               "PASSWORD",
+               [{database, "DATABASE"},
+                {port, 12390},
+                {ssl, true},
+                {application_name, "NAME"},
+                {codecs, [{epgsql_codec_bit, []}, {epgsql_codec_timestamp, []}]}]]},
+         close_provider => {epgsql, close, []}}},
+      {ocsdb02, #{}}]}]},
   {modules, []},
-
   {licenses, ["Apache 2.0"]},
-  {links, []}
- ]}.
+  {links, []}]}.
