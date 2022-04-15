@@ -82,5 +82,5 @@ handle_call(Request, From, State) ->
 %%open_connection(OpenFun) ->
 %%    OpenFun().
 
-deliver_connection(PoolRef, Connection) ->
+deliver_connection(PoolRef, {ok,Connection}) ->
     nbdb_pool:add(PoolRef, Connection).
