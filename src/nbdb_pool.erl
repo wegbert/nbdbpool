@@ -40,8 +40,8 @@ get_connection(Pool, Timeout) ->
     catch
         exit:{timeout, _} ->
             {error, timeout};
-        _:_ ->
-            {error, unknown}
+        A:B ->
+            {error, {A,B}}
     end.
 
 return_connection(Pool, Connection) ->
