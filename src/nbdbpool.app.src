@@ -1,7 +1,7 @@
 {application,
  nbdbpool,
  [{description, "An OTP application"},
-  {vsn, "0.1.0"},
+  {vsn, "2.1.1"},
   {registered, []},
   {mod, {nbdbpool_app, []}},
   {applications, [kernel, stdlib]},
